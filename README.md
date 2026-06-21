@@ -76,7 +76,6 @@ simulation), Windows 11 (target).
 Updated and upgraded both Linux distros before installing any tooling.
 
 ![Parrot Update](screenshots/parrot_update_upgrade.png)
-*parrot_update_upgrade.png*
 
 #### Challenge 1: Cross-OS Connectivity
 
