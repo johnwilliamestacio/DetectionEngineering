@@ -395,7 +395,7 @@ This home lab is the foundation for a second phase:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+MIT License - See [LICENSE](/License) file for details
 
 ---
 
