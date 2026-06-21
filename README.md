@@ -1,116 +1,91 @@
-# Detection Engineering Home Lab: Zeek + Elastic Security
-
-![Project Status](https://img.shields.io/badge/Status-Foundation%20Complete-success)
-![Zeek](https://img.shields.io/badge/NSM-Zeek-00ADD8)
-![Elastic](https://img.shields.io/badge/SIEM-Elastic%20Security-005571)
-![Sysmon](https://img.shields.io/badge/Telemetry-Sysmon-0078D6)
-
-A detection home lab used to validate end-to-end visibility from network traffic to endpoint process execution.
-
-**Outcome:** Working Zeek + Elastic + Sysmon pipeline, validated across network and
-endpoint layers.
-
-**Note:** This is the foundation phase. Part 2 (attack simulation + custom detection
-rules) builds on this range — see [What's Next](#whats-next).
+# Detection Engineering Home Lab
+### Building visibility from scratch: Zeek + Elastic Security on a 3-VM range
 
 ---
 
-## Table of Contents
+## Why I built this
 
-- [Project Overview](#project-overview)
-- [Architecture](#architecture)
-- [Implementation](#implementation)
-- [Results](#results)
-- [What's Next](#whats-next)
+Triaging alerts all night teaches you how to read a SIEM. It doesn't teach you how
+one gets built. I wanted to know what's actually happening underneath the dashboards
+I stare at every shift — so I built the pipeline myself: network sensor, endpoint
+agent, and the SIEM stitching them together, from a blank VM to a working detection
+stack.
 
----
-
-## Project Overview
-
-### Objective
-
-Build a detection engineering home lab — network visibility, SIEM, endpoint
-telemetry — from a blank set of VMs, and validate that each layer correctly
-generates and ships data to the SIEM.
-
-### Key Components
-
-- **Zeek** - Network traffic analysis and protocol-level logging
-- **Elastic Security (Hosted)** - SIEM, log aggregation, and endpoint detection
-- **Elastic Defend** - Endpoint protection and alerting
-- **Sysmon** - Granular Windows process and registry telemetry
-
-### Tech Stack
-
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| Network IDS | Zeek | 8.0 |
-| SIEM | Elastic Security (Hosted) | 9.x |
-| Endpoint Agent | Elastic Agent | 9.4.2 |
-| Endpoint Telemetry | Sysmon (Sysinternals) | Latest |
-| Network Sensor OS | Ubuntu | 24.04 |
-| Attack Simulation OS | Parrot OS | Latest |
-| Target OS | Windows | 11 |
-| Hypervisor | VMware Workstation Pro | Latest |
+This isn't a guide that pretends everything worked the first time. It didn't. The
+value here is in what broke and what I had to figure out to fix it.
 
 ---
 
-## Architecture
-![Lab Setup Architecture](screenshots/architecture.png)
+## Lab Topology
 
-**Data Flow:**
-1. Parrot OS generates network activity (Nmap scan) against the Windows target
-2. Zeek on Ubuntu observes traffic on the segment, logs connection metadata in JSON
-3. Elastic Agent + Sysmon on Windows capture process execution and auth events
-4. Both sources ship to Elastic Security (Hosted), correlated in Discover and Alerts
+| Host | Role | IP |
+|---|---|---|
+| Ubuntu 24.04 | Network Sensor (Zeek) | `192.168.125.134` |
+| Parrot OS | Attacker / Adversary Simulation | `192.168.125.135` |
+| Windows 11 | Target / Endpoint | `192.168.125.136` |
+
+![ParrotOS Specs](screenshots/ParrotOS%20Specs.png)
+![Windows 11 Specs](screenshots/Windows%2011%20specs.png)
+![Ubuntu Specs](screenshots/Ubuntu%20specs.png)
+
+All three VMs isolated on a NAT segment, 8GB RAM / multi-core each. Specs above are
+intentionally over-provisioned for a lab this size — better to never bottleneck while
+you're mid-investigation than to find out your VM chokes during a test.
 
 ---
 
-## Implementation
+## Phase 1 — Build the Range
 
-### Part 1: Range Provisioning
+Updated and upgraded both Linux distros first.
 
-Three VMs on an isolated NAT segment — Ubuntu (Zeek sensor), Parrot OS (attack
-simulation), Windows 11 (target).
+![Parrot Update](screenshots/parrot_update_upgrade.png)
 
-Updated and upgraded both Linux distros before installing any tooling.
+### Problem: Neither Linux box could ping the Windows VM
 
-#### Challenge 1: Cross-OS Connectivity
-
-**Issue:** Both Linux hosts failed to ping the Windows 11 VM.
-
-![Parrot Ping Fail](screenshots/parrot_problem_unable%20to%20ping%20windows.png)
-
-![Ubuntu Ping Fail](screenshots/ubuntu_problem_unable%20to%20ping%20windows.png)
-
-**Analysis:** Tested Linux-to-Linux connectivity first to isolate the variable.
+Classic first-day-of-lab wall. Windows Defender Firewall blocks inbound ICMP echo
+requests by default — this isn't a bug, it's Windows being Windows.
 
 ![Ubuntu Ping Parrot](screenshots/ubuntu_ping_parrot.png)
+*Linux-to-Linux pings worked fine — confirms the network segment itself was healthy
+before troubleshooting Windows.*
 
-Linux-to-Linux succeeded, narrowing the issue to the Windows host. Windows Defender
-Firewall blocks inbound ICMP by default.
+![Windows Ping Fail](screenshots/ubuntu_problem_unable%20to%20ping%20windows.png)
 
-**Resolution:**
+**Fix:** Added an inbound firewall rule for ICMPv4 via PowerShell:
+
 ```powershell
 New-NetFirewallRule -DisplayName "Allow ICMPv4-In" -Protocol ICMPv4 -IcmpType 8 -Action Allow
 ```
 
-![Firewall Rule Applied](screenshots/windows_solution_unable%20to%20ping.png)
-
-**Outcome:** Bidirectional ping confirmed across all three hosts.
-
 ![Both Pinging](screenshots/windows_can%20ping%20both%20OS.png)
 
+### Disabling Windows Defender (intentionally, and for a reason)
 
-#### Defender Configuration
+I'd be running tools like Meterpreter later that Defender will — correctly — flag as
+malicious. Rather than fight the AV mid-test, I disabled it deliberately through Group
+Policy:
 
-Later phases use tooling that Defender flags as malicious by default. To keep
-Elastic Defend and Sysmon as the detection surface under test, Defender was disabled
-via Group Policy and the change verified.
+`gpedit.msc` → Administrative Templates → Windows Components → Microsoft Defender
+Antivirus → **Turn off Microsoft Defender Antivirus** → Enabled, then under
+**Real-time Protection** → disabled real-time protection and enabled behavior
+monitoring.
+
+![Defender Disabled Confirmed](screenshots/windows_disabled%20defender%20after%20applying%20g%5Bpo%5D.png)
+
+Confirmed via Windows Security, which now shows real-time protection off with the
+note *"This setting is managed by your administrator"* — proof the GPO took effect
+rather than a manual toggle that Defender would silently revert.
+
+> **Why this matters operationally:** disabling AV in a lab isn't about disabling
+> security — it's about controlling *which* layer catches the activity. I wanted
+> Elastic Defend and Sysmon to be my detection surface for this exercise, not
+> Defender doing the catching invisibly before the data ever reached my SIEM.
 
 ---
 
-### Part 2: Network Sensor Deployment (Zeek)
+## Phase 2 — Zeek: Network Visibility
+
+Installed via the official Zeek repo on Ubuntu.
 
 ```bash
 su root
@@ -120,35 +95,35 @@ sudo apt update
 sudo apt install zeek-8.0
 ```
 
-#### Challenge 2: Missing Dependency
+### Problem: `curl` not found
 
-**Issue:** `curl` not installed by default on minimal Ubuntu, blocking the GPG key fetch.
+Minimal Ubuntu installs don't ship curl by default. Easy fix, but the kind of thing
+that stops a guided install cold if you've never hit it before.
 
 ![Curl Missing](screenshots/ubuntu_problem_curl%20is%20not%20installed.png)
 
-**Resolution:** `apt install curl`
-**Outcome:** Repository added, Zeek installed.
+```bash
+apt install curl
+```
 
-#### Zeek Configuration
+### Configuration
 
-`networks.cfg` — declared `192.168.125.0/8` as local so Zeek classifies lab traffic
-correctly instead of treating it as unknown.
+**`networks.cfg`** — declared my lab's network as local so Zeek doesn't treat my own
+traffic as external/unknown: `192.168.125.0/8`
 
 ![Networks Config](screenshots/ubuntu_zeek%20configuration_networks%20cfg.png)
 
-`node.cfg` — corrected the listening interface from the template default (`eth0`) to
-the actual adapter (`ens33`), confirmed via `ip addr`.
+**`node.cfg`** — pointed Zeek at the correct interface. Used `ip addr` to confirm mine
+was `ens33`, not the default `eth0` in the template.
 
 ![Zeek Configuration](screenshots/ubuntu_zeek%20configuration.png)
 
-#### Challenge 3: ZeekControl Not in PATH
-
-**Issue:** `zeekctl: command not found`
+### Problem: `zeekctl: command not found`
 
 ![Zeek Not Found](screenshots/ubuntu_problem_zeek%20not%20found.png)
 
-**Resolution:** Binary existed but wasn't symlinked to PATH. Ran directly from the
-install location:
+Zeek wasn't symlinked to PATH. Ran it directly from its install location instead:
+
 ```bash
 cd /opt/zeek/bin
 ./zeekctl
@@ -157,34 +132,32 @@ deploy
 
 ![Zeek Deployed](screenshots/ubuntu_solution_zeek%20not%20found.png)
 
-**Outcome:** Zeek deployed and running. Snapshotted all three VMs as a baseline
-before introducing Elastic.
+Zeek deployed and started successfully. Snapshotted all three VMs at this point as a
+clean baseline before touching Elastic.
 
 ---
 
-### Part 3: SIEM Deployment (Elastic Security)
+## Phase 3 — Elastic Security: The SIEM Layer
 
-#### Challenge 4: Deployment Architecture
+### Problem: Serverless deployment was a dead end
 
-**Issue:** Elastic trial defaulted to a **serverless** deployment. No Elastic Agent
-installer was available for the Windows target.
+Signed up for the 14-day Elastic trial and defaulted into a **serverless**
+deployment. Spent real time hunting for an agent installer that, in serverless mode,
+doesn't expose itself the way you'd expect from a traditional self-managed stack.
+Got frustrated enough to consider scrapping the whole approach.
+
+Stepped back, reconsidered the deployment model rather than the tooling, and switched
+to **hosted deployment** with full SIEM capabilities — Elastic Defend included.
 
 ![Serverless Deployment](screenshots/elastic_create%20serverless.png)
 
-**Analysis:** Serverless does not expose agent management the way a self-managed
-deployment does — the deployment model itself didn't fit a single-host agent use
-case.
-
-**Resolution:** Switched to **Hosted Deployment** with Elastic Defend (full SIEM +
-endpoint protection).
-
-![Elastic Defend Added](screenshots/elastic_add%20elastic%20defend.png)
+> This was the most valuable failure in the whole lab. The fix wasn't a command —
+> it was recognizing I'd picked the wrong deployment architecture for what I was
+> trying to do, not a missing flag or broken install.
 
 ![Elastic Welcome](screenshots/elastic_welcome.png)
 
-**Outcome:** Agent installer available; deployment unblocked.
-
-#### Elastic Agent Installation (Windows Target)
+### Installing Elastic Agent on the Windows endpoint
 
 ```powershell
 $ProgressPreference = 'SilentlyContinue'
@@ -195,60 +168,57 @@ cd elastic-agent-9.4.2-windows-x86_64
 ```
 
 ![Agent Installed Windows](screenshots/windows_installed%20elastic%20agent.png)
-
 ![Agent Confirmed](screenshots/elastic_agent%20confirmed.png)
 
-#### Challenge 5: Agent Enrolled, No Data Flow
+### Problem: Agent enrolled, but no incoming data for 5+ minutes
 
-**Issue:** Fleet showed *"Listening for incoming data from enrolled agents…"* with
-no data after 5+ minutes.
+The Fleet UI sat on *"Listening for incoming data from enrolled agents…"* with
+nothing coming through. Worked through the standard troubleshooting checklist —
+checked agent status, generated fresh Windows event activity, restarted the agent
+service to force a new handshake.
 
 ![No Incoming Data](screenshots/elastic_problem_no%20incoming%20data.png)
 
-**Analysis:** Checked agent status (`elastic-agent.exe status`), generated fresh
-event activity, restarted the agent service to force a new handshake. All checks
-returned healthy, ruling out the agent itself.
+None of it fixed it. The actual cause: **outbound firewall restrictions** blocking
+ports 443 (HTTPS) and 8220 (Fleet Server) — the agent could enroll but couldn't
+sustain the data channel.
 
-**Resolution:** Outbound firewall rules were blocking ports **443** (HTTPS) and
-**8220** (Fleet Server) — the agent could complete enrollment but not sustain the
-data channel.
+Once outbound 443/8220 were confirmed open, logs started flooding in.
 
-**Outcome:** Logs flowed within seconds of opening 443/8220 outbound.
-
-#### Detection Tuning: Prevent → Detect
+### Tuning Elastic Defend: Prevent → Detect
 
 Switched Malware, Ransomware, Memory Threat, and Malicious Behavior protections from
-**Prevent** to **Detect**, consistent with the earlier Defender configuration —
-automatic blocking removes the activity before it can be observed.
+**Prevent** to **Detect**. For a detection-engineering exercise, an AV that silently
+blocks the thing you're trying to observe defeats the purpose — same logic as the
+earlier Defender decision. I want visibility first, enforcement decisions second.
 
 ![Prevent to Detect](screenshots/elastic_endpoint%20setting_from%20prevent%20to%20detect.png)
 
 ---
 
-### Part 4: Zeek → Elastic Integration
+## Phase 4 — Zeek → Elastic Integration
 
-#### Challenge 6: Deprecated Documentation
+Zeek logs needed to ship in JSON for Elastic to parse them cleanly. The documented
+approach (`@load policy/tuning/json-logs.zeek`) referenced a `defaults` policy folder
+that no longer exists in newer Zeek 8.0 — it's been folded into Zeek's defaults
+upstream. Used the direct redef instead, appended to `local.zeek`: redef LogAscii::use_json = T;
 
-**Issue:** Official docs referenced `@load policy/tuning/json-logs.zeek`, which
-depends on a `defaults` policy folder not present in Zeek 8.0.
-
-**Analysis:** The package was deprecated upstream and folded into Zeek's own
-defaults; the documented path no longer applies.
-
-**Resolution:** Used the underlying config variable directly in `local.zeek`: redef LogAscii::use_json = T;
-
-**Outcome:** Verified `conn.log` under `/opt/zeek/logs/current` returning valid JSON.
+Verified by checking `conn.log` under `/opt/zeek/logs/current` for valid JSON
+structure.
 
 ![Zeek JSON Verified](screenshots/ubuntu_verify%20that%20zeek%20json%20is%20working.png)
 
-Created a dedicated Zeek integration policy in Elastic (`DEB_x86_64`, matching the
-Ubuntu sensor architecture) and confirmed enrollment.
+Created a dedicated Zeek integration policy in Elastic (`DEB_x86_64` build, matching
+the Ubuntu sensor's architecture) and confirmed enrollment.
 
 ![Zeek Agent Enrolled](screenshots/ubuntu_successfuly%20installed%20elastic%20agent.png)
 
 ---
 
-### Part 5: Pipeline Validation — Network Layer
+## Phase 5 — Proving the Pipeline: NMAP Validation
+
+From Parrot OS, ran a service-detection scan against the Windows target to generate
+network traffic Zeek would have to observe and categorize:
 
 ```bash
 sudo nmap -sV 192.168.125.136
@@ -256,166 +226,101 @@ sudo nmap -sV 192.168.125.136
 
 ![Nmap Scan](screenshots/parrot_nmap%20done.png)
 
-Confirmed via Elastic's Zeek Log Overview dashboard (traffic spikes matching the scan
-window) and independently in Discover using `event.dataset:zeek.connection`.
+Confirmed in Elastic's built-in Zeek Log Overview dashboard — visible traffic spikes
+correlating to the scan window, and individually verified via Discover using
+`event.dataset:zeek.connection`.
 
 ![Nmap Logged Dashboard](screenshots/elastic_nmap%20trial%20logged.png)
 
-![Nmap Discover](screenshots/elastic_nmap%20trial%20logged_event%20data%20zeek%20connection.png)
+First time seeing my own generated traffic land cleanly in a SIEM I built from the
+ground up — genuinely felt like watching my first forwarder light up in an old
+Splunk home lab, except this time I'd built every layer underneath it myself.
 
 ---
 
-### Part 6: Pipeline Validation — Endpoint Layer
+## Phase 6 — Endpoint Detection: EICAR Test
 
-Downloaded Palo Alto's `wildfire-test-pe-file.exe`, a benign EICAR-class detection
-test file, on the Windows target.
+Downloaded Palo Alto's `wildfire-test-pe-file.exe` — a benign file designed to be
+flagged as malicious by AV/EDR — to validate Elastic Defend's detection path on the
+Windows endpoint.
 
 ![Wildfire Test File](screenshots/windows_wildfire%20test%20pe%20file.png)
-
 ![EICAR Detected](screenshots/elastic_EICAR%20File%20detected.png)
 
-Triggered a **Critical** alert, risk score 99, with a full process tree:
+In Elastic's Alerts view, the file triggered a **Critical** severity alert with a
+risk score of 99, full rule reasoning, and an interactive process-tree visualization
+(the "Analyze Event" graph) showing the complete execution chain:
 `userinit.exe → explorer.exe → wildfire-test-pe-file.exe → conhost.exe`
 
 ![Process Tree Analyzer](screenshots/elastic_EICAR%20File%20detected_amazing%20analyzer%20%20graph.png)
 
-![Process Discover](screenshots/elastic_EICAR%20File%20discover%20process%20name%20wildfire.png)
+Pivoted into Discover and queried `process.name: "wildfire-test-pe-file.exe"`
+directly — same investigative muscle memory as working a BOTS dataset in Splunk,
+just on infrastructure I'd stood up myself.
 
-Ran reconnaissance-style PowerShell commands (`whoami`, `hostname`,
-`Get-ComputerInfo`, `ipconfig`, `Get-ComputerInfo > systeminformation.txt`) and
-traced the parent-child chain via `process.parent.name: "powershell.exe"`.
+### PowerShell activity logging
 
-![PowerShell Whoami](screenshots/elastic_powershell%20whoami.png)
+Ran a sequence of standard recon/exfil-adjacent commands to see how they'd surface
+in the dataset:
+
+```powershell
+whoami
+hostname
+Get-ComputerInfo
+ipconfig
+Get-ComputerInfo > systeminformation.txt
+```
+
+Queried Discover for individual commands (`whoami.exe`) and then pivoted broader with
+`process.parent.name: "powershell.exe"` to see the full parent-child chain across all
+five commands in one view.
 
 ![PowerShell Chain](screenshots/elastic_powershell%20powershell.png)
 
 ---
 
-### Part 7: Endpoint Telemetry — Sysmon
+## Phase 7 — Closing the Visibility Gap: Sysmon
 
-#### Challenge 7: Endpoint Telemetry Depth
+Elastic Defend alone gave good alert-level detail, but I wanted deeper process-level
+telemetry — registry, parent-child relationships, image loads at a finer grain than
+the endpoint agent alone surfaces.
 
-**Issue:** Elastic Defend provided alert-level detail but limited granularity at the
-process/registry level.
-
-**Analysis:** Defend reports that an event occurred; it does not provide the
-process/registry detail needed to reconstruct how it occurred.
-
-**Resolution:** Installed Sysmon (Sysinternals) with a community config, added the
-Windows integration in Elastic, and re-ran the same EICAR + PowerShell sequence for a
-before/after comparison.
-
-**Outcome:** 553 records returned, 100% attributed to `windows.sysmon_operational`,
-versus a handful of Defend alerts for the same activity.
+Installed **Sysmon (Sysinternals)** with a community SwiftOnSecurity-style config via
+GitHub, added the Windows integration in Elastic (`event.dataset:
+windows.sysmon_operational`), and re-ran the exact same EICAR + PowerShell sequence
+to do a direct before/after comparison.
 
 ![Sysmon Event Data](screenshots/elastic_event%20data%20sysmon.png)
 
----
-
-## Results
-
-### Validation Summary
-
-| Layer | Tool | Validation Method | Result |
-|-------|------|-------------------|--------|
-| Network | Zeek | Nmap scan + Zeek Log Overview dashboard | Traffic correlated, JSON logs confirmed |
-| Endpoint (Alert) | Elastic Defend | EICAR-class test file | Critical alert, risk score 99, full process tree |
-| Endpoint (Process) | Elastic Defend + Discover | `process.name` / `process.parent.name` queries | Individual + chained PowerShell activity confirmed |
-| Endpoint (Depth) | Sysmon | Identical sequence, before/after comparison | 553 records vs. handful of alert-level events |
-
-### From Zero to Working Range
-
-| Area | Before | After |
-|------|--------|-------|
-| SIEM deployment experience | None | Hosted Elastic Security, agent fleet, integration policies |
-| Network visibility | None | Zeek sensor, verified JSON logging, dashboard correlation |
-| Endpoint visibility | None | Elastic Defend alerting + Sysmon process-level telemetry |
-| Troubleshooting approach | N/A | Firewall/network ruled out before application config, on every blocker |
+553 records returned, 100% attributed to `windows.sysmon_operational` — the same
+activity that produced a handful of Elastic Defend alerts produced an order of
+magnitude more granular telemetry once Sysmon was in the pipeline.
 
 ---
 
-## What's Next
+## Key Takeaways
 
-This home lab is the foundation for a second phase:
-
-- [ ] Run adversary simulation chains (Atomic Red Team) against the range
-- [ ] Write and tune custom KQL detection rules against the Zeek + Sysmon data
-- [ ] Map validated techniques to MITRE ATT&CK (T1046, T1059, and beyond)
-- [ ] Add Suricata alongside Zeek for signature-based detection
-- [ ] Build a unified Kibana dashboard combining Zeek, Sysmon, and Defend
-- [ ] Document full attack → detection → response chains
-
----
-
-## 📝 Challenges Resolved
-
-**Challenge 1: Network Connectivity**
-- **Issue:** Windows Defender Firewall blocking inbound ICMP
-- **Analysis:** Isolated Linux-to-Linux connectivity first to rule out a network-wide issue
-- **Resolution:** Explicit inbound firewall rule
-- **Outcome:** Bidirectional ping confirmed across all hosts
-
-**Challenge 2: Missing Dependency**
-- **Issue:** `curl` absent on minimal Ubuntu install
-- **Analysis:** Repo setup failing at the GPG key fetch step
-- **Resolution:** Single package install
-- **Outcome:** Zeek repo configured
-
-**Challenge 3: PATH Configuration**
-- **Issue:** `zeekctl` not found
-- **Analysis:** Binary existed but wasn't symlinked to PATH
-- **Resolution:** Ran from the install directory
-- **Outcome:** Zeek deployed and running
-
-**Challenge 4: Deployment Architecture Mismatch**
-- **Issue:** Serverless deployment had no path to agent installation
-- **Analysis:** Deployment model did not support a single-host agent use case
-- **Resolution:** Switched to Hosted Deployment
-- **Outcome:** Agent install unblocked
-
-**Challenge 5: Silent Data Flow Failure**
-- **Issue:** Agent enrolled but shipped no data
-- **Analysis:** Ruled out the agent/service via status checks before suspecting the network
-- **Resolution:** Opened outbound 443/8220
-- **Outcome:** Data flowing within seconds
-
-**Challenge 6: Deprecated Documentation**
-- **Issue:** Official docs referenced a removed Zeek policy path
-- **Analysis:** Package deprecated upstream, docs not updated
-- **Resolution:** Used the underlying config variable directly
-- **Outcome:** Valid JSON logging confirmed
-
-**Challenge 7: Insufficient Endpoint Granularity**
-- **Issue:** Elastic Defend alone left a visibility gap at the process level
-- **Analysis:** Alert-level detail insufficient for process-level investigation
-- **Resolution:** Added Sysmon, re-ran identical test sequence
-- **Outcome:** 553 records vs. a handful of alerts for the same activity
+- **Deployment architecture decisions compound.** The serverless-vs-hosted choice
+  early on nearly derailed the entire lab — not because the tooling was broken, but
+  because I'd matched the wrong deployment model to the goal.
+- **"No data" is rarely the integration's fault.** Both major blockers I hit
+  (Windows ping, Elastic Agent data flow) traced back to firewall rules, not
+  misconfigured software. Network path first, application config second.
+- **Prevent mode and Detect mode answer different questions.** Prevent tells you
+  "it's blocked." Detect tells you "here's what it actually does." For learning
+  detection engineering, you need the second one.
+- **One data source is never enough.** Zeek gave me the network's story. Elastic
+  Defend gave me the endpoint's alert story. Sysmon gave me the endpoint's *process*
+  story. Each closed a gap the others couldn't see — which is the whole argument for
+  defense in depth, just proven on my own infrastructure instead of read in a book.
 
 ---
 
-## License
+## Stack
 
-MIT License - See [LICENSE](/License) file for details
-
----
-
-## Contact
-
-**LinkedIn:** https://www.linkedin.com/in/johnwilliamestacio/
-**Email:** johnwilliamestacio@gmail.com
-
-**Questions?** Open an issue or reach out directly.
+`Zeek 8.0` · `Elastic Security (Hosted)` · `Elastic Defend` · `Elastic Agent 9.4.2` ·
+`Sysmon (Sysinternals)` · `Ubuntu 24.04` · `Parrot OS` · `Windows 11`
 
 ---
 
-## Acknowledgments
-
-**Tech Stack Credits:**
-- [Zeek](https://zeek.org/)
-- [Elastic Security](https://www.elastic.co/security)
-- [Sysinternals (Sysmon)](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon)
-- [VMware](https://www.vmware.com/)
-
----
-
-**If you found this helpful, please give it a ⭐**
+*Built and documented by John William Estacio ([@CleverSec](https://github.com/CleverSec))*
