@@ -75,8 +75,6 @@ simulation), Windows 11 (target).
 
 Updated and upgraded both Linux distros before installing any tooling.
 
-![Parrot Update](screenshots/parrot_update_upgrade.png)
-
 #### Challenge 1: Cross-OS Connectivity
 
 **Issue:** Both Linux hosts failed to ping the Windows 11 VM.
@@ -103,19 +101,12 @@ New-NetFirewallRule -DisplayName "Allow ICMPv4-In" -Protocol ICMPv4 -IcmpType 8 
 
 ![Both Pinging](screenshots/windows_can%20ping%20both%20OS.png)
 
-![Ubuntu Ping Works](screenshots/ubuntu_ping%20works%20after%20windows%20solution.png)
 
 #### Defender Configuration
 
 Later phases use tooling that Defender flags as malicious by default. To keep
 Elastic Defend and Sysmon as the detection surface under test, Defender was disabled
 via Group Policy and the change verified.
-
-![GPEdit Config](screenshots/windows_disable%20defender_gpedit.png)
-
-![Real-Time Protection](screenshots/windows_disable%20defender_gpedit_realtimep%5Brotection%5D.png)
-
-![Defender Disabled Confirmed](screenshots/windows_disabled%20defender%20after%20applying%20g%5Bpo%5D.png)
 
 ---
 
@@ -203,8 +194,6 @@ cd elastic-agent-9.4.2-windows-x86_64
 .\elastic-agent.exe install --url=https://<fleet-url>:443 --enrollment-token=<token>
 ```
 
-![Agent Install Command](screenshots/elastic_install%20agent%20on%20your%20host.png)
-
 ![Agent Installed Windows](screenshots/windows_installed%20elastic%20agent.png)
 
 ![Agent Confirmed](screenshots/elastic_agent%20confirmed.png)
@@ -232,7 +221,7 @@ Switched Malware, Ransomware, Memory Threat, and Malicious Behavior protections 
 **Prevent** to **Detect**, consistent with the earlier Defender configuration —
 automatic blocking removes the activity before it can be observed.
 
-![Prevent to Detect](screenshots/elastic_endpoint%20setting_from%20prevent%20to%20de%5Btect%5D.png)
+![Prevent to Detect](screenshots/elastic_endpoint%20setting_from%20prevent%20to%20detect.png)
 
 ---
 
@@ -255,7 +244,7 @@ defaults; the documented path no longer applies.
 Created a dedicated Zeek integration policy in Elastic (`DEB_x86_64`, matching the
 Ubuntu sensor architecture) and confirmed enrollment.
 
-![Zeek Agent Enrolled](screenshots/ubuntu_successfully%20installed%20elastic%20agent.png)
+![Zeek Agent Enrolled](screenshots/ubuntu_successfuly%20installed%20elastic%20agent.png)
 
 ---
 
@@ -272,7 +261,7 @@ window) and independently in Discover using `event.dataset:zeek.connection`.
 
 ![Nmap Logged Dashboard](screenshots/elastic_nmap%20trial%20logged.png)
 
-![Nmap Discover](screenshots/elastic_nmap%20trial%20logged_event%20data%20zeek%20c%5Bonnection%5D.png)
+![Nmap Discover](screenshots/elastic_nmap%20trial%20logged_event%20data%20zeek%20connection.png)
 
 ---
 
@@ -288,9 +277,9 @@ test file, on the Windows target.
 Triggered a **Critical** alert, risk score 99, with a full process tree:
 `userinit.exe → explorer.exe → wildfire-test-pe-file.exe → conhost.exe`
 
-![Process Tree Analyzer](screenshots/elastic_EICAR%20File%20detected_amazing%20analyz%5Ber%20graph%5D.png)
+![Process Tree Analyzer](screenshots/elastic_EICAR%20File%20detected_amazing%20analyzer%20%20graph.png)
 
-![Process Discover](screenshots/elastic_EICAR%20File%20discover%20process%20name%20wil%5Bdfire%5D.png)
+![Process Discover](screenshots/elastic_EICAR%20File%20discover%20process%20name%20wildfire.png)
 
 Ran reconnaissance-style PowerShell commands (`whoami`, `hostname`,
 `Get-ComputerInfo`, `ipconfig`, `Get-ComputerInfo > systeminformation.txt`) and
