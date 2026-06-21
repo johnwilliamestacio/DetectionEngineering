@@ -73,15 +73,6 @@ generates and ships data to the SIEM.
 Three VMs on an isolated NAT segment — Ubuntu (Zeek sensor), Parrot OS (attack
 simulation), Windows 11 (target).
 
-![ParrotOS Specs](screenshots/ParrotOS%20Specs.png)
-*ParrotOS Specs.png*
-
-![Windows 11 Specs](screenshots/Windows%2011%20specs.png)
-*Windows 11 specs.png*
-
-![Ubuntu Specs](screenshots/Ubuntu%20specs.png)
-*Ubuntu specs.png*
-
 Updated and upgraded both Linux distros before installing any tooling.
 
 ![Parrot Update](screenshots/parrot_update_upgrade.png)
@@ -92,15 +83,12 @@ Updated and upgraded both Linux distros before installing any tooling.
 **Issue:** Both Linux hosts failed to ping the Windows 11 VM.
 
 ![Parrot Ping Fail](screenshots/parrot_problem_unable%20to%20ping%20windows.png)
-*parrot_problem_unable to ping windows.png*
 
 ![Ubuntu Ping Fail](screenshots/ubuntu_problem_unable%20to%20ping%20windows.png)
-*ubuntu_problem_unable to ping windows.png*
 
 **Analysis:** Tested Linux-to-Linux connectivity first to isolate the variable.
 
 ![Ubuntu Ping Parrot](screenshots/ubuntu_ping_parrot.png)
-*ubuntu_ping_parrot.png*
 
 Linux-to-Linux succeeded, narrowing the issue to the Windows host. Windows Defender
 Firewall blocks inbound ICMP by default.
@@ -111,15 +99,12 @@ New-NetFirewallRule -DisplayName "Allow ICMPv4-In" -Protocol ICMPv4 -IcmpType 8 
 ```
 
 ![Firewall Rule Applied](screenshots/windows_solution_unable%20to%20ping.png)
-*windows_solution_unable to ping.png*
 
 **Outcome:** Bidirectional ping confirmed across all three hosts.
 
 ![Both Pinging](screenshots/windows_can%20ping%20both%20OS.png)
-*windows_can ping both OS.png*
 
 ![Ubuntu Ping Works](screenshots/ubuntu_ping%20works%20after%20windows%20solution.png)
-*ubuntu_ping works after windows solution.png*
 
 #### Defender Configuration
 
@@ -128,13 +113,10 @@ Elastic Defend and Sysmon as the detection surface under test, Defender was disa
 via Group Policy and the change verified.
 
 ![GPEdit Config](screenshots/windows_disable%20defender_gpedit.png)
-*windows_disable defender_gpedit.png*
 
 ![Real-Time Protection](screenshots/windows_disable%20defender_gpedit_realtimep%5Brotection%5D.png)
-*windows_disable defender_gpedit_realtimeprotection.png*
 
 ![Defender Disabled Confirmed](screenshots/windows_disabled%20defender%20after%20applying%20g%5Bpo%5D.png)
-*windows_disabled defender after applying gpo.png*
 
 ---
 
@@ -153,7 +135,6 @@ sudo apt install zeek-8.0
 **Issue:** `curl` not installed by default on minimal Ubuntu, blocking the GPG key fetch.
 
 ![Curl Missing](screenshots/ubuntu_problem_curl%20is%20not%20installed.png)
-*ubuntu_problem_curl is not installed.png*
 
 **Resolution:** `apt install curl`
 **Outcome:** Repository added, Zeek installed.
@@ -164,20 +145,17 @@ sudo apt install zeek-8.0
 correctly instead of treating it as unknown.
 
 ![Networks Config](screenshots/ubuntu_zeek%20configuration_networks%20cfg.png)
-*ubuntu_zeek configuration_networks cfg.png*
 
 `node.cfg` — corrected the listening interface from the template default (`eth0`) to
 the actual adapter (`ens33`), confirmed via `ip addr`.
 
 ![Zeek Configuration](screenshots/ubuntu_zeek%20configuration.png)
-*ubuntu_zeek configuration.png*
 
 #### Challenge 3: ZeekControl Not in PATH
 
 **Issue:** `zeekctl: command not found`
 
 ![Zeek Not Found](screenshots/ubuntu_problem_zeek%20not%20found.png)
-*ubuntu_problem_zeek not found.png*
 
 **Resolution:** Binary existed but wasn't symlinked to PATH. Ran directly from the
 install location:
@@ -188,7 +166,6 @@ deploy
 ```
 
 ![Zeek Deployed](screenshots/ubuntu_solution_zeek%20not%20found.png)
-*ubuntu_solution_zeek not found.png*
 
 **Outcome:** Zeek deployed and running. Snapshotted all three VMs as a baseline
 before introducing Elastic.
@@ -203,7 +180,6 @@ before introducing Elastic.
 installer was available for the Windows target.
 
 ![Serverless Deployment](screenshots/elastic_create%20serverless.png)
-*elastic_create serverless.png*
 
 **Analysis:** Serverless does not expose agent management the way a self-managed
 deployment does — the deployment model itself didn't fit a single-host agent use
@@ -213,10 +189,8 @@ case.
 endpoint protection).
 
 ![Elastic Defend Added](screenshots/elastic_add%20elastic%20defend.png)
-*elastic_add elastic defend.png*
 
 ![Elastic Welcome](screenshots/elastic_welcome.png)
-*elastic_welcome.png*
 
 **Outcome:** Agent installer available; deployment unblocked.
 
@@ -231,13 +205,10 @@ cd elastic-agent-9.4.2-windows-x86_64
 ```
 
 ![Agent Install Command](screenshots/elastic_install%20agent%20on%20your%20host.png)
-*elastic_install agent on your host.png*
 
 ![Agent Installed Windows](screenshots/windows_installed%20elastic%20agent.png)
-*windows_installed elastic agent.png*
 
 ![Agent Confirmed](screenshots/elastic_agent%20confirmed.png)
-*elastic_agent confirmed.png*
 
 #### Challenge 5: Agent Enrolled, No Data Flow
 
@@ -245,7 +216,6 @@ cd elastic-agent-9.4.2-windows-x86_64
 no data after 5+ minutes.
 
 ![No Incoming Data](screenshots/elastic_problem_no%20incoming%20data.png)
-*elastic_problem_no incoming data.png*
 
 **Analysis:** Checked agent status (`elastic-agent.exe status`), generated fresh
 event activity, restarted the agent service to force a new handshake. All checks
@@ -264,7 +234,6 @@ Switched Malware, Ransomware, Memory Threat, and Malicious Behavior protections 
 automatic blocking removes the activity before it can be observed.
 
 ![Prevent to Detect](screenshots/elastic_endpoint%20setting_from%20prevent%20to%20de%5Btect%5D.png)
-*elastic_endpoint setting_from prevent to detect.png*
 
 ---
 
@@ -283,13 +252,11 @@ defaults; the documented path no longer applies.
 **Outcome:** Verified `conn.log` under `/opt/zeek/logs/current` returning valid JSON.
 
 ![Zeek JSON Verified](screenshots/ubuntu_verify%20that%20zeek%20json%20is%20working.png)
-*ubuntu_verify that zeek json is working.png*
 
 Created a dedicated Zeek integration policy in Elastic (`DEB_x86_64`, matching the
 Ubuntu sensor architecture) and confirmed enrollment.
 
 ![Zeek Agent Enrolled](screenshots/ubuntu_successfully%20installed%20elastic%20agent.png)
-*ubuntu_successfully installed elastic agent.png*
 
 ---
 
@@ -300,16 +267,13 @@ sudo nmap -sV 192.168.125.136
 ```
 
 ![Nmap Scan](screenshots/parrot_nmap%20done.png)
-*parrot_nmap done.png*
 
 Confirmed via Elastic's Zeek Log Overview dashboard (traffic spikes matching the scan
 window) and independently in Discover using `event.dataset:zeek.connection`.
 
 ![Nmap Logged Dashboard](screenshots/elastic_nmap%20trial%20logged.png)
-*elastic_nmap trial logged.png*
 
 ![Nmap Discover](screenshots/elastic_nmap%20trial%20logged_event%20data%20zeek%20c%5Bonnection%5D.png)
-*elastic_nmap trial logged_event data zeek connection.png*
 
 ---
 
@@ -319,29 +283,23 @@ Downloaded Palo Alto's `wildfire-test-pe-file.exe`, a benign EICAR-class detecti
 test file, on the Windows target.
 
 ![Wildfire Test File](screenshots/windows_wildfire%20test%20pe%20file.png)
-*windows_wildfire test pe file.png*
 
 ![EICAR Detected](screenshots/elastic_EICAR%20File%20detected.png)
-*elastic_EICAR File detected.png*
 
 Triggered a **Critical** alert, risk score 99, with a full process tree:
 `userinit.exe → explorer.exe → wildfire-test-pe-file.exe → conhost.exe`
 
 ![Process Tree Analyzer](screenshots/elastic_EICAR%20File%20detected_amazing%20analyz%5Ber%20graph%5D.png)
-*elastic_EICAR File detected_amazing analyzer graph.png*
 
 ![Process Discover](screenshots/elastic_EICAR%20File%20discover%20process%20name%20wil%5Bdfire%5D.png)
-*elastic_EICAR File discover process name wildfire.png*
 
 Ran reconnaissance-style PowerShell commands (`whoami`, `hostname`,
 `Get-ComputerInfo`, `ipconfig`, `Get-ComputerInfo > systeminformation.txt`) and
 traced the parent-child chain via `process.parent.name: "powershell.exe"`.
 
 ![PowerShell Whoami](screenshots/elastic_powershell%20whoami.png)
-*elastic_powershell whoami.png*
 
 ![PowerShell Chain](screenshots/elastic_powershell%20powershell.png)
-*elastic_powershell powershell.png*
 
 ---
 
@@ -363,7 +321,6 @@ before/after comparison.
 versus a handful of Defend alerts for the same activity.
 
 ![Sysmon Event Data](screenshots/elastic_event%20data%20sysmon.png)
-*elastic_event data sysmon.png*
 
 ---
 
@@ -391,7 +348,7 @@ versus a handful of Defend alerts for the same activity.
 
 ## What's Next
 
-This range is the foundation for a second phase:
+This home lab is the foundation for a second phase:
 
 - [ ] Run adversary simulation chains (Atomic Red Team) against the range
 - [ ] Write and tune custom KQL detection rules against the Zeek + Sysmon data
