@@ -1,44 +1,54 @@
-# Detection Engineering Home Lab
-### Building visibility from scratch: Zeek + Elastic Security on a 3-VM range
+# Detection Engineering: Zeek + Elastic Security on a 3-VM range
+![Project Status](https://img.shields.io/badge/Status-Foundation%20Complete-success)
+![Zeek](https://img.shields.io/badge/NSM-Zeek-00ADD8)
+![Elastic](https://img.shields.io/badge/SIEM-Elastic%20Security-005571)
+![Sysmon](https://img.shields.io/badge/Telemetry-Sysmon-0078D6)
 
----
+A detection home lab used to validate end-to-end visibility from network traffic to endpoint process execution.
 
-## Why I built this
+## Project Overview
 
-Triaging alerts all night teaches you how to read a SIEM. It doesn't teach you how
-one gets built. I wanted to know what's actually happening underneath the dashboards
-I stare at every shift — so I built the pipeline myself: network sensor, endpoint
-agent, and the SIEM stitching them together, from a blank VM to a working detection
-stack.
+### Objective
 
-This isn't a guide that pretends everything worked the first time. It didn't. The
-value here is in what broke and what I had to figure out to fix it.
+Build a detection engineering home lab — network visibility, SIEM, endpoint
+telemetry — from a blank set of VMs, and validate that each layer correctly
+generates and ships data to the SIEM.
 
----
+### Key Components
 
-## Lab Topology
+- **Zeek** - Network traffic analysis and protocol-level logging
+- **Elastic Security (Hosted)** - SIEM, log aggregation, and endpoint detection
+- **Elastic Defend** - Endpoint protection and alerting
+- **Sysmon** - Granular Windows process and registry telemetry
 
-| Host | Role | IP |
-|---|---|---|
-| Ubuntu 24.04 | Network Sensor (Zeek) | `192.168.125.134` |
-| Parrot OS | Attacker / Adversary Simulation | `192.168.125.135` |
-| Windows 11 | Target / Endpoint | `192.168.125.136` |
+### Tech Stack
 
-![ParrotOS Specs](screenshots/ParrotOS%20Specs.png)
-![Windows 11 Specs](screenshots/Windows%2011%20specs.png)
-![Ubuntu Specs](screenshots/Ubuntu%20specs.png)
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Network IDS | Zeek | 8.0 |
+| SIEM | Elastic Security (Hosted) | 9.x |
+| Endpoint Agent | Elastic Agent | 9.4.2 |
+| Endpoint Telemetry | Sysmon (Sysinternals) | Latest |
+| Network Sensor OS | Ubuntu | 24.04 |
+| Attack Simulation OS | Parrot OS | Latest |
+| Target OS | Windows | 11 |
+| Hypervisor | VMware Workstation Pro | Latest |
 
-All three VMs isolated on a NAT segment, 8GB RAM / multi-core each. Specs above are
-intentionally over-provisioned for a lab this size — better to never bottleneck while
-you're mid-investigation than to find out your VM chokes during a test.
+## Architecture
+![Lab Setup Architecture](screenshots/architecture.png)
 
----
+**Data Flow:**
+1. Parrot OS generates network activity (Nmap scan) against the Windows target
+2. Zeek on Ubuntu observes traffic on the segment, logs connection metadata in JSON
+3. Elastic Agent + Sysmon on Windows capture process execution and auth events
+4. Both sources ship to Elastic Security (Hosted), correlated in Discover and Alerts
+
+## Implementation
+
 
 ## Phase 1 — Build the Range
 
 Updated and upgraded both Linux distros first.
-
-![Parrot Update](screenshots/parrot_update_upgrade.png)
 
 ### Problem: Neither Linux box could ping the Windows VM
 
@@ -70,7 +80,7 @@ Antivirus → **Turn off Microsoft Defender Antivirus** → Enabled, then under
 **Real-time Protection** → disabled real-time protection and enabled behavior
 monitoring.
 
-![Defender Disabled Confirmed](screenshots/windows_disabled%20defender%20after%20applying%20g%5Bpo%5D.png)
+![Defender Disabled Confirmed](screenshots/windows_disabled%20defender%20after%20applying%20gpedit.png)
 
 Confirmed via Windows Security, which now shows real-time protection off with the
 note *"This setting is managed by your administrator"* — proof the GPO took effect
@@ -81,7 +91,6 @@ rather than a manual toggle that Defender would silently revert.
 > Elastic Defend and Sysmon to be my detection surface for this exercise, not
 > Defender doing the catching invisibly before the data ever reached my SIEM.
 
----
 
 ## Phase 2 — Zeek: Network Visibility
 
@@ -134,8 +143,6 @@ deploy
 
 Zeek deployed and started successfully. Snapshotted all three VMs at this point as a
 clean baseline before touching Elastic.
-
----
 
 ## Phase 3 — Elastic Security: The SIEM Layer
 
@@ -194,7 +201,6 @@ earlier Defender decision. I want visibility first, enforcement decisions second
 
 ![Prevent to Detect](screenshots/elastic_endpoint%20setting_from%20prevent%20to%20detect.png)
 
----
 
 ## Phase 4 — Zeek → Elastic Integration
 
@@ -213,7 +219,6 @@ the Ubuntu sensor's architecture) and confirmed enrollment.
 
 ![Zeek Agent Enrolled](screenshots/ubuntu_successfuly%20installed%20elastic%20agent.png)
 
----
 
 ## Phase 5 — Proving the Pipeline: NMAP Validation
 
@@ -235,8 +240,6 @@ correlating to the scan window, and individually verified via Discover using
 First time seeing my own generated traffic land cleanly in a SIEM I built from the
 ground up — genuinely felt like watching my first forwarder light up in an old
 Splunk home lab, except this time I'd built every layer underneath it myself.
-
----
 
 ## Phase 6 — Endpoint Detection: EICAR Test
 
@@ -277,7 +280,6 @@ five commands in one view.
 
 ![PowerShell Chain](screenshots/elastic_powershell%20powershell.png)
 
----
 
 ## Phase 7 — Closing the Visibility Gap: Sysmon
 
@@ -296,8 +298,6 @@ to do a direct before/after comparison.
 activity that produced a handful of Elastic Defend alerts produced an order of
 magnitude more granular telemetry once Sysmon was in the pipeline.
 
----
-
 ## Key Takeaways
 
 - **Deployment architecture decisions compound.** The serverless-vs-hosted choice
@@ -314,13 +314,21 @@ magnitude more granular telemetry once Sysmon was in the pipeline.
   story. Each closed a gap the others couldn't see — which is the whole argument for
   defense in depth, just proven on my own infrastructure instead of read in a book.
 
----
+## License
 
-## Stack
+MIT License - See [LICENSE](/License) file for details
 
-`Zeek 8.0` · `Elastic Security (Hosted)` · `Elastic Defend` · `Elastic Agent 9.4.2` ·
-`Sysmon (Sysinternals)` · `Ubuntu 24.04` · `Parrot OS` · `Windows 11`
 
----
+## Contact
 
-*Built and documented by John William Estacio ([@CleverSec](https://github.com/CleverSec))*
+**LinkedIn:** https://www.linkedin.com/in/johnwilliamestacio/
+
+**Questions?** Open an issue or reach out directly.
+
+## Acknowledgments
+
+**Tech Stack Credits:**
+- [Zeek](https://zeek.org/)
+- [Elastic Security](https://www.elastic.co/security)
+- [Sysinternals (Sysmon)](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon)
+- [VMware](https://www.vmware.com/)
